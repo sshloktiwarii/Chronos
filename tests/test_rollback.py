@@ -10,7 +10,7 @@ from chronos.recovery import RecoveryManager
 def test_automatic_rollback_on_failure():
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
-        db_path = tmp_path / "test_checkpoints.db"
+        db_path = tmp_path / ".chronos" / "test_checkpoints.db"
         store = CheckpointStore(db_path)
 
         workflow = DAGWorkflow(
@@ -51,7 +51,7 @@ def test_automatic_rollback_on_failure():
 def test_manual_rollback_to_arbitrary_snapshot():
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
-        db_path = tmp_path / "test_checkpoints.db"
+        db_path = tmp_path / ".chronos" / "test_checkpoints.db"
         store = CheckpointStore(db_path)
         recovery = RecoveryManager(tmp_path, store)
 
@@ -86,38 +86,13 @@ def test_manual_rollback_to_arbitrary_snapshot():
 def test_git_tree_content_addressable_rollback():
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
-        db_path = tmp_path / "test_checkpoints.db"
+        db_path = tmp_path / ".chronos" / "test_checkpoints.db"
         store = CheckpointStore(db_path)
         recovery = RecoveryManager(tmp_path, store)
-
-        git_env = dict(
-            GIT_CONFIG_GLOBAL="/dev/null",
-            GIT_CONFIG_SYSTEM="/dev/null",
-            PATH="/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-        )
-
-        # Initialize Git repo
-        subprocess.run(["git", "init"], cwd=str(tmp_path), env=git_env, check=True, capture_output=True)
-        subprocess.run(
-            ["git", "config", "user.name", "TestUser"],
-            cwd=str(tmp_path),
-            env=git_env,
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            ["git", "config", "user.email", "test@test.com"],
-            cwd=str(tmp_path),
-            env=git_env,
-            check=True,
-            capture_output=True,
-        )
 
         # State 1: create core files
         (tmp_path / "main.py").write_text("def run(): pass\n")
         (tmp_path / "config.json").write_text('{"env": "prod"}')
-        subprocess.run(["git", "add", "-A"], cwd=str(tmp_path), env=git_env, check=True)
-        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), env=git_env, check=True)
 
         tree_sha_1 = recovery.capture_tree_sha()
         assert tree_sha_1 is not None
@@ -141,3 +116,53 @@ def test_git_tree_content_addressable_rollback():
         # Verify filesystem restoration
         assert (tmp_path / "main.py").read_text() == "def run(): pass\n"
         assert not (tmp_path / "rogue.tmp").exists()
+
+
+def test_isolated_git_immune_to_workspace_git_commands():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        db_path = tmp_path / ".chronos" / "test_checkpoints.db"
+        store = CheckpointStore(db_path)
+        recovery = RecoveryManager(tmp_path, store)
+
+        git_env = dict(
+            GIT_CONFIG_GLOBAL="/dev/null",
+            GIT_CONFIG_SYSTEM="/dev/null",
+            PATH="/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        )
+
+        # Agent runs git init in its own workspace root
+        subprocess.run(["git", "init"], cwd=str(tmp_path), env=git_env, check=True, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "AgentUser"], cwd=str(tmp_path), env=git_env, check=True)
+        subprocess.run(["git", "config", "user.email", "agent@test.com"], cwd=str(tmp_path), env=git_env, check=True)
+
+        # Create file and commit via agent Git
+        (tmp_path / "solution.py").write_text("print('clean solution')\n")
+        subprocess.run(["git", "add", "solution.py"], cwd=str(tmp_path), env=git_env, check=True)
+        subprocess.run(["git", "commit", "-m", "agent commit 1"], cwd=str(tmp_path), env=git_env, check=True)
+
+        # Chronos captures snapshot into .chronos/git
+        tree_sha = recovery.capture_tree_sha()
+        assert tree_sha is not None
+
+        snap = ExecutionSnapshot(
+            snapshot_id="chronos-snap-1",
+            node_id="agent_checkpoint",
+            status=NodeStatus.COMPLETED,
+            tree_sha=tree_sha,
+            blake3_receipt_hash="b3_dummy_receipt_hash_12345678",
+        )
+        store.record_snapshot(snap)
+
+        # Agent corrupts solution.py and modifies workspace git index
+        (tmp_path / "solution.py").write_text("corrupted solution")
+        subprocess.run(["git", "add", "solution.py"], cwd=str(tmp_path), env=git_env, check=True)
+
+        # Chronos rollback to snap-1
+        recovery.rollback_to_snapshot("chronos-snap-1")
+
+        # Solution file must be restored
+        assert (tmp_path / "solution.py").read_text() == "print('clean solution')\n"
+        # Database must have recorded the Blake3 receipt
+        retrieved = store.get_snapshot("chronos-snap-1")
+        assert retrieved.blake3_receipt_hash == "b3_dummy_receipt_hash_12345678"

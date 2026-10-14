@@ -1,7 +1,8 @@
 """
 Chronos Checkpoint Store.
 SQLite WAL-backed immutable snapshot ledger adhering strictly to systems invariants.
-Stores execution metadata, DAG transitions, and Git content-addressable tree SHAs.
+Stores execution metadata, DAG transitions, Git content-addressable tree SHAs,
+and Aegis Blake3 cryptographic audit receipts.
 """
 
 from __future__ import annotations
@@ -45,6 +46,9 @@ class CheckpointStore:
                     stderr TEXT NOT NULL,
                     exit_code INTEGER NOT NULL,
                     tree_sha TEXT,
+                    blake3_receipt_hash TEXT,
+                    blake3_stdout_hash TEXT,
+                    blake3_stderr_hash TEXT,
                     file_manifest_json TEXT NOT NULL,
                     error_summary TEXT,
                     FOREIGN KEY (parent_id) REFERENCES snapshots(snapshot_id)
@@ -70,8 +74,9 @@ class CheckpointStore:
                 INSERT INTO snapshots (
                     snapshot_id, parent_id, node_id, timestamp, status,
                     inputs_json, outputs_json, stdout, stderr, exit_code,
-                    tree_sha, file_manifest_json, error_summary
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    tree_sha, blake3_receipt_hash, blake3_stdout_hash, blake3_stderr_hash,
+                    file_manifest_json, error_summary
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     snapshot.snapshot_id,
@@ -85,6 +90,9 @@ class CheckpointStore:
                     snapshot.stderr,
                     snapshot.exit_code,
                     snapshot.tree_sha,
+                    snapshot.blake3_receipt_hash,
+                    snapshot.blake3_stdout_hash,
+                    snapshot.blake3_stderr_hash,
                     json.dumps(manifest_serialized),
                     snapshot.error_summary,
                 ),
@@ -121,7 +129,12 @@ class CheckpointStore:
         manifest = {
             path: FileState.model_validate(data) for path, data in manifest_raw.items()
         }
-        tree_sha = row["tree_sha"] if "tree_sha" in row.keys() else None
+        keys = row.keys()
+        tree_sha = row["tree_sha"] if "tree_sha" in keys else None
+        blake3_receipt = row["blake3_receipt_hash"] if "blake3_receipt_hash" in keys else None
+        blake3_stdout = row["blake3_stdout_hash"] if "blake3_stdout_hash" in keys else None
+        blake3_stderr = row["blake3_stderr_hash"] if "blake3_stderr_hash" in keys else None
+
         return ExecutionSnapshot(
             snapshot_id=row["snapshot_id"],
             parent_id=row["parent_id"],
@@ -134,6 +147,9 @@ class CheckpointStore:
             stderr=row["stderr"],
             exit_code=row["exit_code"],
             tree_sha=tree_sha,
+            blake3_receipt_hash=blake3_receipt,
+            blake3_stdout_hash=blake3_stdout,
+            blake3_stderr_hash=blake3_stderr,
             file_manifest=manifest,
             error_summary=row["error_summary"],
         )

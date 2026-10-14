@@ -1,7 +1,8 @@
 """
 Chronos Recovery & Rollback Engine.
-Handles Git content-addressable tree snapshotting, atomic rollback to prior snapshots,
+Handles isolated Git content-addressable tree snapshotting, atomic rollback to prior snapshots,
 and error log extraction.
+Enforces strict separation between workspace Git repositories and Chronos internal snapshot state.
 """
 
 from __future__ import annotations
@@ -19,31 +20,46 @@ class RecoveryManager:
     def __init__(self, workspace_dir: Path, checkpoint_store: CheckpointStore):
         self.workspace_dir = Path(workspace_dir)
         self.store = checkpoint_store
+        # Isolated Chronos internal shadow repository
+        self.chronos_dir = self.workspace_dir / ".chronos"
+        self.git_dir = self.chronos_dir / "git"
+        self.git_index_file = self.git_dir / "index"
+        self._ensure_isolated_git_repo()
+
+    def _ensure_isolated_git_repo(self) -> None:
+        """Initializes a private, isolated Git object store strictly for Chronos snapshots."""
+        if not (self.git_dir / "HEAD").exists():
+            self.git_dir.mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                ["git", "--git-dir", str(self.git_dir), "init"],
+                env=self._git_env(),
+                capture_output=True,
+                check=False,
+            )
 
     def _git_env(self) -> Dict[str, str]:
         env = dict(os.environ)
+        env["GIT_DIR"] = str(self.git_dir)
+        env["GIT_WORK_TREE"] = str(self.workspace_dir)
+        env["GIT_INDEX_FILE"] = str(self.git_index_file)
         env["GIT_CONFIG_GLOBAL"] = "/dev/null"
         env["GIT_CONFIG_SYSTEM"] = "/dev/null"
+        env["PATH"] = env.get("PATH", "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin")
         return env
 
-    def is_git_workspace(self) -> bool:
-        return (self.workspace_dir / ".git").is_dir()
-
     def capture_tree_sha(self) -> Optional[str]:
-        """Captures Git content-addressable tree SHA without creating full commits."""
-        if not self.is_git_workspace():
-            return None
-
+        """Captures Git content-addressable tree SHA using isolated .chronos/git index."""
         try:
-            # Stage current working tree
+            # Stage current working tree into isolated Chronos index
+            # Exclude .chronos directory from snapshot
             subprocess.run(
-                ["git", "add", "-A"],
+                ["git", "add", "--all", "--", ":!.chronos"],
                 cwd=str(self.workspace_dir),
                 env=self._git_env(),
                 check=True,
                 capture_output=True,
             )
-            # Write index into a tree object and return its SHA
+            # Write index into an isolated tree object and return its SHA
             proc = subprocess.run(
                 ["git", "write-tree"],
                 cwd=str(self.workspace_dir),
@@ -64,9 +80,9 @@ class RecoveryManager:
         for path in self.workspace_dir.rglob("*"):
             if not path.is_file():
                 continue
-            # Skip hidden files or database files
             rel_path = str(path.relative_to(self.workspace_dir))
-            if any(part.startswith(".") for part in path.parts) or rel_path.endswith((".db", ".db-wal", ".db-shm")):
+            # Skip Chronos internal directory, hidden files, and database files
+            if rel_path.startswith(".chronos") or rel_path.endswith((".db", ".db-wal", ".db-shm")):
                 continue
 
             if tracked_extensions and not any(rel_path.endswith(ext) for ext in tracked_extensions):
@@ -94,8 +110,8 @@ class RecoveryManager:
 
         restored_files: List[str] = []
 
-        # 1. Fast path: Git content-addressable tree rollback if tree_sha exists
-        if target_snapshot.tree_sha and self.is_git_workspace():
+        # 1. Fast path: Isolated Git content-addressable tree rollback if tree_sha exists
+        if target_snapshot.tree_sha:
             try:
                 subprocess.run(
                     ["git", "read-tree", "-u", "--reset", target_snapshot.tree_sha],
@@ -105,7 +121,7 @@ class RecoveryManager:
                     capture_output=True,
                 )
                 subprocess.run(
-                    ["git", "clean", "-fd"],
+                    ["git", "clean", "-fd", "-e", ".chronos"],
                     cwd=str(self.workspace_dir),
                     env=self._git_env(),
                     check=True,
@@ -117,7 +133,7 @@ class RecoveryManager:
                 # Fall through to manifest rollback if git command fails
                 pass
 
-        # 2. Manifest-based rollback (non-git environments or fallback)
+        # 2. Manifest-based rollback (fallback)
         current_manifest = self.capture_workspace()
         target_manifest = target_snapshot.file_manifest
 
@@ -141,9 +157,13 @@ class RecoveryManager:
 
     def formulate_recovery_prompt(self, failed_snapshot: ExecutionSnapshot) -> str:
         error_context = failed_snapshot.stderr or failed_snapshot.stdout or "Command failed with non-zero exit code"
+        receipt_info = ""
+        if failed_snapshot.blake3_receipt_hash:
+            receipt_info = f"\nAegis Blake3 Verification Receipt: {failed_snapshot.blake3_receipt_hash[:16]}..."
+
         return (
             f"--- EXECUTION FAILURE RECOVERY GATE ---\n"
-            f"Node '{failed_snapshot.node_id}' failed with exit code {failed_snapshot.exit_code}.\n"
+            f"Node '{failed_snapshot.node_id}' failed with exit code {failed_snapshot.exit_code}.{receipt_info}\n"
             f"Error Diagnostics:\n{error_context.strip()}\n"
             f"Action: Workspace rolled back to checkpoint '{failed_snapshot.parent_id}'.\n"
             f"Instruction: Formulate an alternative strategy addressing the error above."

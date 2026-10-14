@@ -54,6 +54,9 @@ class ExecutionSnapshot:
     stderr: str = ""
     exit_code: int = 0
     tree_sha: Optional[str] = None
+    blake3_receipt_hash: Optional[str] = None
+    blake3_stdout_hash: Optional[str] = None
+    blake3_stderr_hash: Optional[str] = None
     file_manifest: Dict[str, FileState] = field(default_factory=dict)
     error_summary: Optional[str] = None
 
@@ -85,6 +88,9 @@ class ExecutionSnapshot:
             stderr=data.get("stderr", ""),
             exit_code=data.get("exit_code", 0),
             tree_sha=data.get("tree_sha"),
+            blake3_receipt_hash=data.get("blake3_receipt_hash"),
+            blake3_stdout_hash=data.get("blake3_stdout_hash"),
+            blake3_stderr_hash=data.get("blake3_stderr_hash"),
             file_manifest=manifest,
             error_summary=data.get("error_summary"),
         )

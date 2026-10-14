@@ -14,6 +14,7 @@ from tests.test_rollback import (
     test_automatic_rollback_on_failure,
     test_manual_rollback_to_arbitrary_snapshot,
     test_git_tree_content_addressable_rollback,
+    test_isolated_git_immune_to_workspace_git_commands,
 )
 from tests.test_compactor import test_context_compaction_reduces_tokens
 
@@ -24,6 +25,7 @@ def run_all_tests():
         ("test_automatic_rollback_on_failure", test_automatic_rollback_on_failure),
         ("test_manual_rollback_to_arbitrary_snapshot", test_manual_rollback_to_arbitrary_snapshot),
         ("test_git_tree_content_addressable_rollback", test_git_tree_content_addressable_rollback),
+        ("test_isolated_git_immune_to_workspace_git_commands", test_isolated_git_immune_to_workspace_git_commands),
         ("test_context_compaction_reduces_tokens", test_context_compaction_reduces_tokens),
     ]
 
