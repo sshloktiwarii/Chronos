@@ -1,8 +1,8 @@
-# Chronos Orchestrator ⏳
+# Chronos Orchestrator
 
 > **Stateful DAG Orchestration, Transactional Checkpointing & Failure Recovery for Autonomous AI Agents**
 >
-> 📖 **New to this project?** Read the [Plain-English Guide for Dummies](file:///Users/shloktiwari/Documents/untitled%20folder/chronos-orchestrator/README_FOR_DUMMIES.md) for a zero-jargon overview, everyday analogies, and a 60-second test walk-through.
+> **New to this project?** Read the [Plain-English Guide for Dummies](file:///Users/shloktiwari/Documents/untitled%20folder/chronos-orchestrator/README_FOR_DUMMIES.md) for a zero-jargon overview, everyday analogies, and a 60-second test walk-through.
 
 Chronos solves the **Non-Determinism Problem** in multi-step AI reasoning loops. Because large language models are fundamentally probabilistic and stateless, a 20-step execution task has an exponential compounding failure risk ($0.85^{20} \approx 3.8\%$). When step 12 encounters a compiler error or halluncinates, standard agent loops crash or spiral into expensive infinite retries.
 
@@ -10,7 +10,7 @@ Chronos turns fragile sequential agent interactions into a deterministic, transa
 
 ---
 
-## ⚡ Core Architecture
+## Core Architecture
 
 - **Directed Acyclic Graph (DAG) Workflow Engine**: Resolves node dependencies, tracks topological execution order, supports condition gates and automated retry limits.
 - **SQLite WAL Checkpoint Ledger**: Persists immutable state snapshots of files, inputs, outputs, exit codes, and timestamps using Write-Ahead Logging (`PRAGMA journal_mode=WAL;`).
@@ -19,7 +19,7 @@ Chronos turns fragile sequential agent interactions into a deterministic, transa
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Install & Test
 ```bash
@@ -44,7 +44,7 @@ python3 -m chronos.cli compact --objective "Fix compiler warning in auth layer"
 
 ---
 
-## 📊 Technical Comparison
+## Technical Comparison
 
 | Dimension | Flat Context Loop (Naive Agent) | Chronos DAG Orchestration |
 | :--- | :--- | :--- |
@@ -56,5 +56,5 @@ python3 -m chronos.cli compact --objective "Fix compiler warning in auth layer"
 
 ---
 
-## 📜 License
+## License
 MIT License (c) 2026 Shlok Tiwari
