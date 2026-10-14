@@ -1,6 +1,7 @@
 """
 Chronos Checkpoint Store.
 SQLite WAL-backed immutable snapshot ledger adhering strictly to systems invariants.
+Stores execution metadata, DAG transitions, and Git content-addressable tree SHAs.
 """
 
 from __future__ import annotations
@@ -43,6 +44,7 @@ class CheckpointStore:
                     stdout TEXT NOT NULL,
                     stderr TEXT NOT NULL,
                     exit_code INTEGER NOT NULL,
+                    tree_sha TEXT,
                     file_manifest_json TEXT NOT NULL,
                     error_summary TEXT,
                     FOREIGN KEY (parent_id) REFERENCES snapshots(snapshot_id)
@@ -68,8 +70,8 @@ class CheckpointStore:
                 INSERT INTO snapshots (
                     snapshot_id, parent_id, node_id, timestamp, status,
                     inputs_json, outputs_json, stdout, stderr, exit_code,
-                    file_manifest_json, error_summary
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    tree_sha, file_manifest_json, error_summary
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     snapshot.snapshot_id,
@@ -82,6 +84,7 @@ class CheckpointStore:
                     snapshot.stdout,
                     snapshot.stderr,
                     snapshot.exit_code,
+                    snapshot.tree_sha,
                     json.dumps(manifest_serialized),
                     snapshot.error_summary,
                 ),
@@ -118,6 +121,7 @@ class CheckpointStore:
         manifest = {
             path: FileState.model_validate(data) for path, data in manifest_raw.items()
         }
+        tree_sha = row["tree_sha"] if "tree_sha" in row.keys() else None
         return ExecutionSnapshot(
             snapshot_id=row["snapshot_id"],
             parent_id=row["parent_id"],
@@ -129,6 +133,7 @@ class CheckpointStore:
             stdout=row["stdout"],
             stderr=row["stderr"],
             exit_code=row["exit_code"],
+            tree_sha=tree_sha,
             file_manifest=manifest,
             error_summary=row["error_summary"],
         )

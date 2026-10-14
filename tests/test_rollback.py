@@ -1,8 +1,9 @@
+import subprocess
 import tempfile
 from pathlib import Path
 from chronos.checkpoint import CheckpointStore
 from chronos.dag import DAGWorkflow
-from chronos.models import NodeStatus
+from chronos.models import ExecutionSnapshot, NodeStatus
 from chronos.recovery import RecoveryManager
 
 
@@ -58,9 +59,6 @@ def test_manual_rollback_to_arbitrary_snapshot():
         (tmp_path / "fileA.txt").write_text("version 1")
         manifest_1 = recovery.capture_workspace()
 
-        from chronos.models import ExecutionSnapshot
-        import uuid
-
         snap1 = ExecutionSnapshot(
             snapshot_id="snap-1",
             parent_id=None,
@@ -83,3 +81,63 @@ def test_manual_rollback_to_arbitrary_snapshot():
         # Verify filesystem state
         assert (tmp_path / "fileA.txt").read_text() == "version 1"
         assert not (tmp_path / "fileB.txt").exists()
+
+
+def test_git_tree_content_addressable_rollback():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        db_path = tmp_path / "test_checkpoints.db"
+        store = CheckpointStore(db_path)
+        recovery = RecoveryManager(tmp_path, store)
+
+        git_env = dict(
+            GIT_CONFIG_GLOBAL="/dev/null",
+            GIT_CONFIG_SYSTEM="/dev/null",
+            PATH="/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        )
+
+        # Initialize Git repo
+        subprocess.run(["git", "init"], cwd=str(tmp_path), env=git_env, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.name", "TestUser"],
+            cwd=str(tmp_path),
+            env=git_env,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=str(tmp_path),
+            env=git_env,
+            check=True,
+            capture_output=True,
+        )
+
+        # State 1: create core files
+        (tmp_path / "main.py").write_text("def run(): pass\n")
+        (tmp_path / "config.json").write_text('{"env": "prod"}')
+        subprocess.run(["git", "add", "-A"], cwd=str(tmp_path), env=git_env, check=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=str(tmp_path), env=git_env, check=True)
+
+        tree_sha_1 = recovery.capture_tree_sha()
+        assert tree_sha_1 is not None
+
+        snap1 = ExecutionSnapshot(
+            snapshot_id="snap-git-1",
+            node_id="baseline",
+            status=NodeStatus.COMPLETED,
+            tree_sha=tree_sha_1,
+        )
+        store.record_snapshot(snap1)
+
+        # State 2: Mutate main.py and introduce unwanted temp file
+        (tmp_path / "main.py").write_text("corrupted code syntax error")
+        (tmp_path / "rogue.tmp").write_text("garbage")
+
+        # Execute rollback to snap-git-1 using Git tree reset
+        restored = recovery.rollback_to_snapshot("snap-git-1")
+        assert any("git_tree_reset" in r for r in restored)
+
+        # Verify filesystem restoration
+        assert (tmp_path / "main.py").read_text() == "def run(): pass\n"
+        assert not (tmp_path / "rogue.tmp").exists()

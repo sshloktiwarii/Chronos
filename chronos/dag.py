@@ -81,12 +81,14 @@ class DAGWorkflow:
 
         # Take initial clean baseline snapshot
         baseline_manifest = self.recovery.capture_workspace()
+        baseline_tree_sha = self.recovery.capture_tree_sha()
         baseline_snapshot = ExecutionSnapshot(
             snapshot_id=str(uuid.uuid4()),
             parent_id=None,
             node_id="BASELINE_ROOT",
             status=NodeStatus.COMPLETED,
             stdout="Workspace baseline initialized.",
+            tree_sha=baseline_tree_sha,
             file_manifest=baseline_manifest,
         )
         self.store.record_snapshot(baseline_snapshot)
@@ -127,6 +129,7 @@ class DAGWorkflow:
                 exit_code = proc.returncode
 
             current_manifest = self.recovery.capture_workspace()
+            current_tree_sha = self.recovery.capture_tree_sha()
 
             if exit_code == 0:
                 node.status = NodeStatus.COMPLETED
@@ -138,6 +141,7 @@ class DAGWorkflow:
                     stdout=stdout,
                     stderr=stderr,
                     exit_code=exit_code,
+                    tree_sha=current_tree_sha,
                     file_manifest=current_manifest,
                 )
                 self.store.record_snapshot(snap)
@@ -155,6 +159,7 @@ class DAGWorkflow:
                     stdout=stdout,
                     stderr=stderr,
                     exit_code=exit_code,
+                    tree_sha=current_tree_sha,
                     file_manifest=current_manifest,
                     error_summary=f"Execution error in node {node.node_id}",
                 )

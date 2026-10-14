@@ -53,6 +53,7 @@ class ExecutionSnapshot:
     stdout: str = ""
     stderr: str = ""
     exit_code: int = 0
+    tree_sha: Optional[str] = None
     file_manifest: Dict[str, FileState] = field(default_factory=dict)
     error_summary: Optional[str] = None
 
@@ -83,6 +84,7 @@ class ExecutionSnapshot:
             stdout=data.get("stdout", ""),
             stderr=data.get("stderr", ""),
             exit_code=data.get("exit_code", 0),
+            tree_sha=data.get("tree_sha"),
             file_manifest=manifest,
             error_summary=data.get("error_summary"),
         )

@@ -13,6 +13,7 @@ from tests.test_dag import test_dag_successful_linear_execution
 from tests.test_rollback import (
     test_automatic_rollback_on_failure,
     test_manual_rollback_to_arbitrary_snapshot,
+    test_git_tree_content_addressable_rollback,
 )
 from tests.test_compactor import test_context_compaction_reduces_tokens
 
@@ -22,6 +23,7 @@ def run_all_tests():
         ("test_dag_successful_linear_execution", test_dag_successful_linear_execution),
         ("test_automatic_rollback_on_failure", test_automatic_rollback_on_failure),
         ("test_manual_rollback_to_arbitrary_snapshot", test_manual_rollback_to_arbitrary_snapshot),
+        ("test_git_tree_content_addressable_rollback", test_git_tree_content_addressable_rollback),
         ("test_context_compaction_reduces_tokens", test_context_compaction_reduces_tokens),
     ]
 

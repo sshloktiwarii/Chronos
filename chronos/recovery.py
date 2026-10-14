@@ -1,13 +1,16 @@
 """
 Chronos Recovery & Rollback Engine.
-Handles workspace filesystem diffing, atomic rollback to prior snapshots, and error log extraction.
+Handles Git content-addressable tree snapshotting, atomic rollback to prior snapshots,
+and error log extraction.
 """
 
 from __future__ import annotations
 
 import hashlib
+import os
+import subprocess
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set
 from chronos.checkpoint import CheckpointStore
 from chronos.models import ExecutionSnapshot, FileState
 
@@ -16,6 +19,42 @@ class RecoveryManager:
     def __init__(self, workspace_dir: Path, checkpoint_store: CheckpointStore):
         self.workspace_dir = Path(workspace_dir)
         self.store = checkpoint_store
+
+    def _git_env(self) -> Dict[str, str]:
+        env = dict(os.environ)
+        env["GIT_CONFIG_GLOBAL"] = "/dev/null"
+        env["GIT_CONFIG_SYSTEM"] = "/dev/null"
+        return env
+
+    def is_git_workspace(self) -> bool:
+        return (self.workspace_dir / ".git").is_dir()
+
+    def capture_tree_sha(self) -> Optional[str]:
+        """Captures Git content-addressable tree SHA without creating full commits."""
+        if not self.is_git_workspace():
+            return None
+
+        try:
+            # Stage current working tree
+            subprocess.run(
+                ["git", "add", "-A"],
+                cwd=str(self.workspace_dir),
+                env=self._git_env(),
+                check=True,
+                capture_output=True,
+            )
+            # Write index into a tree object and return its SHA
+            proc = subprocess.run(
+                ["git", "write-tree"],
+                cwd=str(self.workspace_dir),
+                env=self._git_env(),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return proc.stdout.strip()
+        except Exception:
+            return None
 
     def capture_workspace(self, tracked_extensions: Set[str] = None) -> Dict[str, FileState]:
         manifest: Dict[str, FileState] = {}
@@ -53,11 +92,36 @@ class RecoveryManager:
         if not target_snapshot:
             raise ValueError(f"Snapshot with ID '{target_snapshot_id}' not found in store.")
 
-        current_manifest = self.capture_workspace()
-        target_manifest = target_snapshot.file_manifest
         restored_files: List[str] = []
 
-        # 1. Restore files that existed in target snapshot
+        # 1. Fast path: Git content-addressable tree rollback if tree_sha exists
+        if target_snapshot.tree_sha and self.is_git_workspace():
+            try:
+                subprocess.run(
+                    ["git", "read-tree", "-u", "--reset", target_snapshot.tree_sha],
+                    cwd=str(self.workspace_dir),
+                    env=self._git_env(),
+                    check=True,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    ["git", "clean", "-fd"],
+                    cwd=str(self.workspace_dir),
+                    env=self._git_env(),
+                    check=True,
+                    capture_output=True,
+                )
+                restored_files.append(f"git_tree_reset: {target_snapshot.tree_sha}")
+                return restored_files
+            except Exception:
+                # Fall through to manifest rollback if git command fails
+                pass
+
+        # 2. Manifest-based rollback (non-git environments or fallback)
+        current_manifest = self.capture_workspace()
+        target_manifest = target_snapshot.file_manifest
+
+        # Restore files that existed in target snapshot
         for rel_path, file_state in target_manifest.items():
             target_path = self.workspace_dir / rel_path
             target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -65,7 +129,7 @@ class RecoveryManager:
                 target_path.write_text(file_state.content, encoding="utf-8")
                 restored_files.append(f"restored: {rel_path}")
 
-        # 2. Delete files that were created after target snapshot
+        # Delete files that were created after target snapshot
         for rel_path in current_manifest:
             if rel_path not in target_manifest:
                 target_path = self.workspace_dir / rel_path
