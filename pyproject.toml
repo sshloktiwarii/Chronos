@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chronos-orchestrator"
+version = "0.1.0"
+description = "Stateful DAG orchestrator & failure recovery engine with transactional checkpointing, rollback branching, and token context compaction for autonomous AI agents"
+readme = "README.md"
+authors = [{ name = "Shlok Tiwari", email = "shloktiwari@users.noreply.github.com" }]
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[project.scripts]
+chronos = "chronos.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
