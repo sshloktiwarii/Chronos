@@ -14,12 +14,19 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 from chronos.checkpoint import CheckpointStore
 from chronos.models import ExecutionSnapshot, FileState
+from chronos.vfs import MemoryCOWWorkspace
 
 
 class RecoveryManager:
-    def __init__(self, workspace_dir: Path, checkpoint_store: CheckpointStore):
+    def __init__(
+        self,
+        workspace_dir: Path,
+        checkpoint_store: CheckpointStore,
+        vfs: Optional[MemoryCOWWorkspace] = None,
+    ):
         self.workspace_dir = Path(workspace_dir)
         self.store = checkpoint_store
+        self.vfs = vfs or MemoryCOWWorkspace(base_disk_dir=self.workspace_dir)
         # Isolated Chronos internal shadow repository
         self.chronos_dir = self.workspace_dir / ".chronos"
         self.git_dir = self.chronos_dir / "git"
@@ -110,7 +117,15 @@ class RecoveryManager:
 
         restored_files: List[str] = []
 
-        # 1. Fast path: Isolated Git content-addressable tree rollback if tree_sha exists
+        # 1. Ultra-fast path: In-Memory COW VFS pointer swap (O(1))
+        if target_snapshot_id in self.vfs.snapshots:
+            reverted = self.vfs.rollback(target_snapshot_id)
+            if self.workspace_dir.exists():
+                self.vfs.materialize_to_disk(self.workspace_dir)
+            restored_files.append(f"vfs_cow_pointer_swap: {target_snapshot_id} ({len(reverted)} files)")
+            return restored_files
+
+        # 2. Fast path: Isolated Git content-addressable tree rollback if tree_sha exists
         if target_snapshot.tree_sha:
             try:
                 subprocess.run(

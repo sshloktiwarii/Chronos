@@ -7,6 +7,7 @@ from chronos.compactor import ContextCompactor
 from chronos.dag import DAGWorkflow
 from chronos.models import DAGNode, ExecutionSnapshot, FileState, NodeStatus
 from chronos.recovery import RecoveryManager
+from chronos.vfs import MemoryCOWWorkspace, VFSInode, VFSTree
 
 __all__ = [
     "CheckpointStore",
@@ -17,4 +18,8 @@ __all__ = [
     "FileState",
     "NodeStatus",
     "RecoveryManager",
+    "MemoryCOWWorkspace",
+    "VFSInode",
+    "VFSTree",
 ]
+

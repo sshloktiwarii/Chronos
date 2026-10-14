@@ -21,6 +21,7 @@ class DAGWorkflow:
         name: str,
         workspace_dir: Path,
         checkpoint_store: CheckpointStore,
+        max_concurrency: int = 4,
     ):
         self.name = name
         self.workspace_dir = Path(workspace_dir)
@@ -28,6 +29,18 @@ class DAGWorkflow:
         self.recovery = RecoveryManager(self.workspace_dir, self.store)
         self.nodes: Dict[str, DAGNode] = {}
         self.execution_order: List[str] = []
+        self.max_concurrency = max_concurrency
+        self.is_throttled: bool = False
+        self.throttle_reason: str = ""
+
+    def apply_backpressure(self, throttle: bool, reason: str = "") -> None:
+        """Dynamically adjusts DAG execution concurrency based on hardware telemetry pressure."""
+        self.is_throttled = throttle
+        self.throttle_reason = reason
+        if throttle:
+            self.max_concurrency = 1
+        else:
+            self.max_concurrency = 4
 
     def add_node(
         self,

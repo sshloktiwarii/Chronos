@@ -65,10 +65,14 @@ def test_unified_triad_integration():
 
         assert healthy, f"Inferno proxy did not start on port {port}"
 
-        # 2. Call Inferno LLM completion
+        # 2. Call Inferno LLM completion (First call - warm up prefix cache)
+        system_prefix = "You are an autonomous AI coding assistant running inside an isolated sandbox."
         payload = json.dumps({
             "model": "inferno-llama-3-8b",
-            "messages": [{"role": "user", "content": "Generate a test file"}],
+            "messages": [
+                {"role": "system", "content": system_prefix},
+                {"role": "user", "content": "Generate a test file"},
+            ],
             "stream": False,
         }).encode("utf-8")
         req = urllib.request.Request(
@@ -81,6 +85,30 @@ def test_unified_triad_integration():
             headers = dict(resp.headers)
             assert "X-Inferno-Prefill-Ms" in headers, "Missing TTFT prefill header"
             assert "X-Inferno-Queue-Ms" in headers, "Missing queue latency header"
+            assert "X-Inferno-Target-Worker" in headers, "Missing target worker header"
+
+        # Allow async prefix tree indexing
+        time.sleep(0.05)
+
+        # Call Inferno a second time with matching prefix - verify KV cache hit
+        payload2 = json.dumps({
+            "model": "inferno-llama-3-8b",
+            "messages": [
+                {"role": "system", "content": system_prefix},
+                {"role": "user", "content": "Refactor test file for concurrency"},
+            ],
+            "stream": False,
+        }).encode("utf-8")
+        req2 = urllib.request.Request(
+            f"http://127.0.0.1:{port}/v1/chat/completions",
+            data=payload2,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req2, timeout=5.0) as resp2:
+            assert resp2.status == 200
+            headers2 = dict(resp2.headers)
+            assert headers2.get("X-Inferno-Prefix-Cache-Hit") == "true", "Expected prefix cache hit"
+            assert int(headers2.get("X-Inferno-Prefix-Tokens-Matched", "0")) > 0
 
         # 3. Execute command through Aegis sandbox
         db_path = tmp_dir / ".chronos" / "checkpoints.db"
