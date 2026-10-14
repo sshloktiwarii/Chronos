@@ -11,7 +11,9 @@ from pathlib import Path
 from chronos.checkpoint import CheckpointStore
 from chronos.compactor import ContextCompactor
 from chronos.dag import DAGWorkflow
+from chronos.models import DAGNode, NodeStatus
 from chronos.recovery import RecoveryManager
+from chronos.visualizer import DAGVisualizer
 
 
 def main() -> None:
@@ -24,6 +26,14 @@ def main() -> None:
     # Subcommand: history
     history_parser = subparsers.add_parser("history", help="Show checkpoint history")
     history_parser.add_argument(
+        "--db", default=".chronos/checkpoints.db", help="Path to SQLite database"
+    )
+
+    # Subcommand: visualize / tree
+    visualize_parser = subparsers.add_parser(
+        "visualize", help="Render visual DAG status tree with Blake3 receipts and tree SHAs"
+    )
+    visualize_parser.add_argument(
         "--db", default=".chronos/checkpoints.db", help="Path to SQLite database"
     )
 
@@ -56,6 +66,26 @@ def main() -> None:
             print(
                 f"{snap.timestamp.isoformat():<28} | {snap.node_id:<20} | {snap.status.value:<12} | {snap.snapshot_id}"
             )
+
+    elif args.command == "visualize":
+        store = CheckpointStore(Path(args.db))
+        history = store.get_history()
+        if not history:
+            print(f"No checkpoints recorded in {args.db}")
+            return
+
+        nodes = {}
+        results = {}
+        for snap in history:
+            nodes[snap.node_id] = DAGNode(
+                node_id=snap.node_id,
+                description=f"Snapshot {snap.snapshot_id[:8]} at {snap.timestamp.strftime('%H:%M:%S')}",
+                tool_call="",
+                status=snap.status,
+            )
+            results[snap.node_id] = snap
+
+        print(DAGVisualizer.render_tree(nodes, results))
 
     elif args.command == "rollback":
         workspace_path = Path(args.workspace)
