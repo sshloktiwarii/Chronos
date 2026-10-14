@@ -79,8 +79,8 @@ def main() -> None:
         for snap in history:
             nodes[snap.node_id] = DAGNode(
                 node_id=snap.node_id,
+                name=snap.node_id,
                 description=f"Snapshot {snap.snapshot_id[:8]} at {snap.timestamp.strftime('%H:%M:%S')}",
-                tool_call="",
                 status=snap.status,
             )
             results[snap.node_id] = snap

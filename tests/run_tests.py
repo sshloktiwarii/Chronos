@@ -17,6 +17,7 @@ from tests.test_rollback import (
     test_isolated_git_immune_to_workspace_git_commands,
 )
 from tests.test_compactor import test_context_compaction_reduces_tokens
+from tests.test_unified_triad import test_unified_triad_integration
 
 
 def run_all_tests():
@@ -27,6 +28,7 @@ def run_all_tests():
         ("test_git_tree_content_addressable_rollback", test_git_tree_content_addressable_rollback),
         ("test_isolated_git_immune_to_workspace_git_commands", test_isolated_git_immune_to_workspace_git_commands),
         ("test_context_compaction_reduces_tokens", test_context_compaction_reduces_tokens),
+        ("test_unified_triad_integration", test_unified_triad_integration),
     ]
 
     passed = 0
