@@ -197,3 +197,32 @@ class DAGWorkflow:
                     i += 1
 
         return results
+
+    def to_mermaid(self) -> str:
+        """Exports the DAG workflow topology and execution statuses into Mermaid format."""
+        lines = ["graph TD"]
+        for node_id, node in self.nodes.items():
+            status_style = ""
+            if node.status == NodeStatus.COMPLETED:
+                status_style = ":::completed"
+            elif node.status == NodeStatus.FAILED:
+                status_style = ":::failed"
+            elif node.status == NodeStatus.RUNNING:
+                status_style = ":::running"
+
+            lines.append(f'    {node_id}["{node.name} ({node.node_id})"]{status_style}')
+            for dep in node.dependencies:
+                lines.append(f"    {dep} --> {node_id}")
+
+        lines.append("    classDef completed fill:#052e16,stroke:#10b981,stroke-width:2px,color:#fff;")
+        lines.append("    classDef failed fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#fff;")
+        lines.append("    classDef running fill:#451a03,stroke:#f59e0b,stroke-width:2px,color:#fff;")
+        return "\n".join(lines)
+
+    def export_mermaid(self, output_path: Path) -> Path:
+        """Writes the Mermaid graph representation to a file on disk."""
+        target = Path(output_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(self.to_mermaid(), encoding="utf-8")
+        return target
+

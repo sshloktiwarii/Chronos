@@ -22,6 +22,7 @@ from tests.test_vfs_cow import (
     test_vfs_snapshot_and_submillisecond_rollback,
     test_vfs_speculative_branching,
     test_vfs_materialize_to_disk,
+    test_vfs_apfs_clonefile_branch,
 )
 from tests.test_unified_triad import test_unified_triad_integration
 
@@ -32,6 +33,7 @@ def run_all_tests():
         ("test_vfs_snapshot_and_submillisecond_rollback", test_vfs_snapshot_and_submillisecond_rollback),
         ("test_vfs_speculative_branching", test_vfs_speculative_branching),
         ("test_vfs_materialize_to_disk", test_vfs_materialize_to_disk),
+        ("test_vfs_apfs_clonefile_branch", test_vfs_apfs_clonefile_branch),
         ("test_dag_successful_linear_execution", test_dag_successful_linear_execution),
         ("test_automatic_rollback_on_failure", test_automatic_rollback_on_failure),
         ("test_manual_rollback_to_arbitrary_snapshot", test_manual_rollback_to_arbitrary_snapshot),

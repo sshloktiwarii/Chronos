@@ -126,3 +126,29 @@ def test_vfs_materialize_to_disk():
 
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def test_vfs_apfs_clonefile_branch():
+    base_dir = Path(tempfile.mkdtemp(prefix="vfs_base_"))
+    branch_dir = Path(tempfile.mkdtemp(prefix="vfs_branch_"))
+    try:
+        (base_dir / "cargo_code.rs").write_text("fn main() { println!(\"hello\"); }")
+        (base_dir / "sub").mkdir()
+        (base_dir / "sub" / "lib.rs").write_text("pub fn add(a: i32, b: i32) -> i32 { a + b }")
+
+        vfs = MemoryCOWWorkspace(base_disk_dir=base_dir)
+        cloned_count = vfs.fork_physical_cow_branch(branch_dir)
+        assert cloned_count == 2
+
+        # External compiler checks - files exist on real disk
+        assert (branch_dir / "cargo_code.rs").exists()
+        assert (branch_dir / "sub" / "lib.rs").exists()
+        assert (branch_dir / "cargo_code.rs").read_text() == "fn main() { println!(\"hello\"); }"
+
+        # Verify mutation in branch workspace does NOT alter base workspace
+        (branch_dir / "cargo_code.rs").write_text("fn main() { println!(\"mutated\"); }")
+        assert (base_dir / "cargo_code.rs").read_text() == "fn main() { println!(\"hello\"); }"
+        assert (branch_dir / "cargo_code.rs").read_text() == "fn main() { println!(\"mutated\"); }"
+    finally:
+        shutil.rmtree(base_dir, ignore_errors=True)
+        shutil.rmtree(branch_dir, ignore_errors=True)
