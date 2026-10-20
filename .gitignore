@@ -27,3 +27,10 @@ htmlcov/
 *.db-wal
 *.db-shm
 .env
+
+# System & temporary files
+*.log
+*.tmp
+*.swp
+*.pyc
+.env.local
